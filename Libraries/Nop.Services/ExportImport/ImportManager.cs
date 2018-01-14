@@ -163,7 +163,7 @@ namespace Nop.Services.ExportImport
                     worksheet.Row(endRow).OutlineLevel = 1;
             }
         }
-        
+
         protected virtual int GetColumnIndex(string[] properties, string columnName)
         {
             if (properties == null)
@@ -675,7 +675,7 @@ namespace Nop.Services.ExportImport
                 _specificationAttributeService.UpdateProductSpecificationAttribute(productSpecificationAttribute);
             }
         }
-        
+
         #endregion
 
         #region Methods
@@ -726,7 +726,7 @@ namespace Nop.Services.ExportImport
 
                 //the columns
                 var properties = GetPropertiesByExcelCells<Product>(worksheet);
-                
+
                 var manager = new PropertyManager<Product>(properties);
 
                 var attributProperties = new[]
@@ -739,7 +739,7 @@ namespace Nop.Services.ExportImport
                         {
                             DropDownElements = AttributeControlType.TextBox.ToSelectList(useLocalization: false)
                         },
-                        new PropertyByName<ExportProductAttribute>("AttributeDisplayOrder"), 
+                        new PropertyByName<ExportProductAttribute>("AttributeDisplayOrder"),
                         new PropertyByName<ExportProductAttribute>("ProductAttributeValueId"),
                         new PropertyByName<ExportProductAttribute>("ValueName"),
                         new PropertyByName<ExportProductAttribute>("AttributeValueType")
@@ -786,7 +786,7 @@ namespace Nop.Services.ExportImport
 
                 var tempProperty = manager.GetProperty("Categories");
                 var categoryCellNum = tempProperty?.PropertyOrderPosition ?? -1;
-                
+
                 tempProperty = manager.GetProperty("SKU");
                 var skuCellNum = tempProperty?.PropertyOrderPosition ?? -1;
 
@@ -848,7 +848,7 @@ namespace Nop.Services.ExportImport
                             else
                             {
                                 specificationAttributeManager.ReadFromXlsx(worksheet, endRow, ExportProductAttribute.ProducAttributeCellOffset);
-                                
+
                                 if (!specificationAttributeManager.IsCaption && int.TryParse((worksheet.Cells[endRow, specificationAttributeOptionIdCellNum].Value ?? string.Empty).ToString(), out int saoid))
                                 {
                                     allSpecificationAttributeOptionIds.Add(saoid);
@@ -861,7 +861,7 @@ namespace Nop.Services.ExportImport
                     }
 
                     if (categoryCellNum > 0)
-                    { 
+                    {
                         var categoryIds = worksheet.Cells[endRow, categoryCellNum].Value?.ToString() ?? string.Empty;
 
                         if (!string.IsNullOrEmpty(categoryIds))
@@ -877,7 +877,7 @@ namespace Nop.Services.ExportImport
                     }
 
                     if (manufacturerCellNum > 0)
-                    { 
+                    {
                         var manufacturerIds = worksheet.Cells[endRow, manufacturerCellNum].Value?.ToString() ?? string.Empty;
                         if (!string.IsNullOrEmpty(manufacturerIds))
                             allManufacturersNames.AddRange(manufacturerIds.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()));
@@ -956,7 +956,7 @@ namespace Nop.Services.ExportImport
                             continue;
 
                         var newTypeOfExportedAttribute = GetTypeOfExportedAttribute(worksheet, productAttributeManager, specificationAttributeManager, iRow);
-                        
+
                         //skip caption row
                         if (newTypeOfExportedAttribute != ExportedAttributeType.NotSpecified &&
                             newTypeOfExportedAttribute != typeOfExportedAttribute)
@@ -1279,7 +1279,7 @@ namespace Nop.Services.ExportImport
                     //sets the current vendor for the new product
                     if (isNew && _workContext.CurrentVendor != null)
                         product.VendorId = _workContext.CurrentVendor.Id;
-                    
+
                     product.UpdatedOnUtc = DateTime.UtcNow;
 
                     if (isNew)
@@ -1335,7 +1335,7 @@ namespace Nop.Services.ExportImport
                     tempProperty = manager.GetProperty("Categories");
 
                     if (tempProperty != null)
-                    { 
+                    {
                         var categoryNames = tempProperty.StringValue;
 
                         //category mappings
@@ -1345,7 +1345,7 @@ namespace Nop.Services.ExportImport
                         {
                             if (categories.Any(c => c == categoryId))
                                 continue;
-                       
+
                             var productCategory = new ProductCategory
                             {
                                 ProductId = product.Id,
@@ -1425,7 +1425,7 @@ namespace Nop.Services.ExportImport
                     //_productService.UpdateHasTierPricesProperty(product);
                     //_productService.UpdateHasDiscountsApplied(product);
                 }
-               
+
                 if (_mediaSettings.ImportProductImagesUsingHash && _pictureService.StoreInDb && _dataProvider.SupportedLengthOfBinaryHash() > 0)
                     ImportProductImagesUsingHash(productPictureMetadata, allProductsBySku);
                 else
@@ -1435,7 +1435,64 @@ namespace Nop.Services.ExportImport
                 _customerActivityService.InsertActivity("ImportProducts", _localizationService.GetResource("ActivityLog.ImportProducts"), countProductsInFile);
             }
         }
-        
+
+        /// <summary>
+        /// Import products from XLSX file
+        /// </summary>
+        /// <param name="stream">Stream</param>
+        public virtual IList<Product> ReadProductFromXlsxSKUs(Stream stream)
+        {
+            using (var xlPackage = new ExcelPackage(stream))
+            {
+                // get the first worksheet in the workbook
+                var worksheet = xlPackage.Workbook.Worksheets.FirstOrDefault();
+                if (worksheet == null)
+                    throw new NopException("No worksheet found");
+
+                //the columns
+                var properties = GetPropertiesByExcelCells<Product>(worksheet);
+
+                var manager = new PropertyManager<Product>(properties);
+
+                var endRow = 2;
+                var allSku = new List<string>();
+
+                var tempProperty = manager.GetProperty("SKU");
+                var skuCellNum = tempProperty?.PropertyOrderPosition ?? -1;
+
+                var countProductsInFile = 0;
+
+                //find end of data
+                while (true)
+                {
+                    var allColumnsAreEmpty = manager.GetProperties
+                        .Select(property => worksheet.Cells[endRow, property.PropertyOrderPosition])
+                        .All(cell => string.IsNullOrEmpty(cell?.Value?.ToString()));
+
+                    if (allColumnsAreEmpty)
+                        break;
+
+                    if (skuCellNum > 0)
+                    {
+                        var sku = worksheet.Cells[endRow, skuCellNum].Value?.ToString() ?? string.Empty;
+
+                        if (!string.IsNullOrEmpty(sku))
+                            allSku.Add(sku);
+                    }
+
+                    //counting the number of products
+                    countProductsInFile += 1;
+
+                    endRow++;
+                }
+
+                //performance optimization, load all products by SKU in one SQL request
+                var allProductsBySku = _productService.GetProductsBySku(allSku.ToArray(), _workContext.CurrentVendor?.Id ?? 0);
+
+                return allProductsBySku;
+            }
+        }
+
         /// <summary>
         /// Import newsletter subscribers from TXT file
         /// </summary>
@@ -1775,7 +1832,7 @@ namespace Nop.Services.ExportImport
                         SaveCategory(isNew, category, allCategories, curentCategoryBreadCrumb, setSeName, seName);
                         remove.Add(rowId);
                     }
-                    
+
                     saveNextTime.RemoveAll(item => remove.Contains(item));
 
                     needSave = remove.Any() && saveNextTime.Any();
@@ -1800,7 +1857,7 @@ namespace Nop.Services.ExportImport
         }
 
         #endregion
-        
+
         #region Nested classes
 
         protected class ProductPictureMetadata
@@ -1815,7 +1872,7 @@ namespace Nop.Services.ExportImport
 
             public bool IsNew { get; set; }
         }
-        
+
         #endregion
     }
 }

@@ -1,4 +1,6 @@
-﻿using System.IO;
+﻿using Nop.Core.Domain.Catalog;
+using System.Collections.Generic;
+using System.IO;
 
 namespace Nop.Services.ExportImport
 {
@@ -12,6 +14,13 @@ namespace Nop.Services.ExportImport
         /// </summary>
         /// <param name="stream">Stream</param>
         void ImportProductsFromXlsx(Stream stream);
+
+        /// <summary>
+        /// Read SKUs from excel then read products by skus
+        /// </summary>
+        /// <param name="stream"></param>
+        /// <returns></returns>
+        IList<Product> ReadProductFromXlsxSKUs(Stream stream);
 
         /// <summary>
         /// Import newsletter subscribers from TXT file

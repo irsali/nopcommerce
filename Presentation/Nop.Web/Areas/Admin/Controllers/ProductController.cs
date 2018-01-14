@@ -3132,6 +3132,46 @@ namespace Nop.Web.Areas.Admin.Controllers
             }
         }
 
+        [HttpPost]
+        public virtual IActionResult ExportExcelBySkuImport(IFormFile importskuexcelfile)
+        {
+            if (!_permissionService.Authorize(StandardPermissionProvider.ManageProducts))
+                return AccessDeniedView();
+
+            if (_workContext.CurrentVendor != null && !_vendorSettings.AllowVendorsToImportProducts)
+                //a vendor can not import products
+                return AccessDeniedView();
+
+            try
+            {
+                IList<Product> products = null;
+                if (importskuexcelfile != null && importskuexcelfile.Length > 0)
+                {
+                    products = _importManager.ReadProductFromXlsxSKUs(importskuexcelfile.OpenReadStream());
+                }
+                else
+                {
+                    ErrorNotification(_localizationService.GetResource("Admin.Common.UploadFile"));
+                    return RedirectToAction("List");
+                }
+
+                //a vendor should have access only to his products
+                if (_workContext.CurrentVendor != null)
+                {
+                    products = products.Where(p => p.VendorId == _workContext.CurrentVendor.Id).ToList();
+                }
+
+                var bytes = _exportManager.ExportProductsToXlsx(products);
+
+                return File(bytes, MimeTypes.TextXlsx, "products.xlsx");
+            }
+            catch (Exception exc)
+            {
+                ErrorNotification(exc);
+                return RedirectToAction("List");
+            }
+        }
+                
         #endregion
 
         #region Low stock reports
